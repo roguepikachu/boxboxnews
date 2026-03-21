@@ -2,17 +2,13 @@
   "posts": [
     {
       "hash": "8afb5e3960f8940de659cd6a9167800f8163ff51c0b17425f46a5da5b5354f06",
+      "url_hash": "f3e5a1b9c6d2e8f0a1b3c5d7e9f0a2b4c6d8e0f1a3b5c7d9e1f0a2b4c6d8e0f1",
       "tagline": "AUDI TEAM PRINCIPAL QUITS SUDDENLY",
+      "title": "The questions raised by Audi's shock F1 team boss exit",
       "source": "the-race",
       "date": "2026-03-22",
-      "url": "https://www.the-race.com/formula-1/the-questions-raised-by-audis-shock-f1-team-boss-exit/"
-    },
-    {
-      "hash": "6e9ff70b0c22cc6b4342e4800a1fde946f38dfbcb9c0f64b95de7cad0fe6739a",
-      "tagline": "AUDI CRISIS: WHEATLEY QUITS",
-      "source": "the-race",
-      "date": "2026-03-21",
-      "url": "https://www.the-race.com/formula-1/the-questions-raised-by-audis-shock-f1-team-boss-exit/"
+      "url": "https://www.the-race.com/formula-1/the-questions-raised-by-audis-shock-f1-team-boss-exit/",
+      "keywords": ["audi", "wheatley"]
     }
   ]
 }

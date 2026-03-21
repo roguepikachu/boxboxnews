@@ -2,7 +2,7 @@ import logging
 import sys
 
 from src.rss_scraper import scrape_rss
-from src.dedup import filter_duplicates, record_post
+from src.dedup import already_posted_today, filter_duplicates, record_post
 from src.rumor_curator import curate
 from src.image_generator import generate_image, create_gradient_fallback
 from src.text_overlay import composite
@@ -17,6 +17,11 @@ logger = logging.getLogger(__name__)
 
 
 def run() -> None:
+    # 0. Check if already posted today
+    if already_posted_today():
+        logger.info("Already posted today. Skipping.")
+        sys.exit(0)
+
     # 1. Scrape RSS feeds
     try:
         candidates = scrape_rss()
@@ -61,11 +66,18 @@ def run() -> None:
         logger.error("Instagram posting failed.")
         sys.exit(1)
 
-    # 8. Record for dedup
+    # 8. Record for dedup — find original article title
+    original_title = ""
+    for c in candidates:
+        if c["url"] == curated["selected_url"]:
+            original_title = c["title"]
+            break
+
     record_post(
         tagline=curated["tagline"],
         source=curated["source"],
         url=curated["selected_url"],
+        title=original_title,
     )
 
     logger.info("Pipeline complete! Media ID: %s", media_id)

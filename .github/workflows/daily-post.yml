@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: daily-post
+  cancel-in-progress: false
+
 jobs:
   post-rumor:
     runs-on: ubuntu-latest
