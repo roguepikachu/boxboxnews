@@ -26,7 +26,7 @@ Return ONLY valid JSON:
     "selected_url": "original source URL",
     "tagline": "3-6 word ALL CAPS punchy headline for the image overlay",
     "caption": "2-3 paragraph Instagram caption. Hook on first line. Conversational but authoritative. Reference the source naturally. Include emojis sparingly. End with line break then hashtags: #F1 #Formula1 #BoxBoxNews + 5-8 relevant tags",
-    "image_prompt": "Detailed Imagen prompt. Cinematic F1 scene matching the rumor. Team livery colors, helmet design, dramatic lighting. Motion blur background. Editorial photography style. 1:1 square. Bottom 30% darker for text overlay. Do NOT include any text, words, letters, numbers, logos, or watermarks in the image.",
+    "image_prompt": "Detailed Imagen prompt. Cinematic F1 scene matching the rumor. Team livery colors, helmet design, dramatic lighting. Motion blur background. Editorial photography style. 1:1 square. Bottom 40% should be dark/shadowed empty space. CRITICAL: The image must contain ZERO text, ZERO words, ZERO letters, ZERO numbers, ZERO logos, ZERO watermarks, ZERO labels, ZERO overlays. Pure photographic image only, completely clean of any writing or symbols.",
     "entities": {
         "drivers": ["Lewis Hamilton"],
         "teams": ["Ferrari"],
@@ -48,6 +48,26 @@ def _format_candidates(candidates: list[dict]) -> str:
     return "\n\n".join(lines)
 
 
+def _get_recent_topics() -> str:
+    """Load recent post topics to tell Gemini what to avoid."""
+    from src.dedup import _load_history
+    history = _load_history()
+    if not history["posts"]:
+        return ""
+
+    lines = []
+    for p in history["posts"][-10:]:  # last 10 posts
+        tagline = p.get("tagline", "")
+        title = p.get("title", "")
+        keywords = ", ".join(p.get("keywords", []))
+        lines.append(f"- {tagline} ({title}) [keywords: {keywords}]")
+
+    return (
+        "\n\nIMPORTANT - DO NOT pick stories about these topics, "
+        "we already posted about them:\n" + "\n".join(lines)
+    )
+
+
 def curate(candidates: list[dict], max_retries: int = 2) -> dict | None:
     """Use Gemini Flash to pick the best rumor and generate post content."""
     if not candidates:
@@ -55,9 +75,11 @@ def curate(candidates: list[dict], max_retries: int = 2) -> dict | None:
         return None
 
     client = genai.Client(api_key=GEMINI_API_KEY)
+    avoid_topics = _get_recent_topics()
     user_prompt = (
         f"Here are {len(candidates)} F1 news candidates from today:\n\n"
         f"{_format_candidates(candidates)}\n\n"
+        f"{avoid_topics}\n\n"
         "Pick the ONE best rumor and return the JSON."
     )
 

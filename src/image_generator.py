@@ -12,8 +12,16 @@ GENERIC_FALLBACK_PROMPT = (
     "Cinematic close-up of a Formula 1 car on track at twilight. "
     "Dramatic lighting, motion blur background, sparks flying from the floor. "
     "Editorial photography style. 1:1 square composition. "
-    "Bottom 30% darker/shadowed area for text overlay. "
-    "Do NOT include any text or words in the image."
+    "Bottom 40% should be dark shadowed empty space. "
+    "The image must contain absolutely no text, no words, no letters, "
+    "no numbers, no logos, no watermarks, no labels. Pure photograph only."
+)
+
+# Appended to every prompt to reinforce no-text rule
+NO_TEXT_SUFFIX = (
+    " IMPORTANT: Generate a purely photographic image with absolutely no text, "
+    "no words, no letters, no numbers, no logos, no watermarks, no labels, "
+    "no overlays anywhere in the image. The image must be completely clean."
 )
 
 
@@ -22,7 +30,7 @@ def generate_image(image_prompt: str) -> bytes | None:
     client = genai.Client(api_key=GEMINI_API_KEY)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    prompts = [image_prompt, GENERIC_FALLBACK_PROMPT]
+    prompts = [image_prompt + NO_TEXT_SUFFIX, GENERIC_FALLBACK_PROMPT]
 
     for attempt, prompt in enumerate(prompts):
         try:

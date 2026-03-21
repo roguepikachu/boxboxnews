@@ -26,52 +26,63 @@ def composite(image_bytes: bytes, tagline: str) -> bytes:
     overlay = Image.new("RGBA", IMAGE_SIZE, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
 
-    # Bottom gradient (bottom 35%)
-    gradient_start = int(IMAGE_SIZE[1] * 0.65)
+    # Bottom gradient (bottom 40%)
+    gradient_start = int(IMAGE_SIZE[1] * 0.60)
     for y in range(gradient_start, IMAGE_SIZE[1]):
         progress = (y - gradient_start) / (IMAGE_SIZE[1] - gradient_start)
-        alpha = int(progress * 220)
+        alpha = int(progress * 230)
         draw.rectangle([(0, y), (IMAGE_SIZE[0], y + 1)], fill=(0, 0, 0, alpha))
 
     # "RUMOR" badge — top left
-    badge_font = _load_font("BebasNeue-Regular.ttf", 28)
-    badge_text = "\U0001f3c1 RUMOR"
+    badge_font = _load_font("BebasNeue-Regular.ttf", 30)
+    badge_text = "RUMOR"
     badge_bbox = draw.textbbox((0, 0), badge_text, font=badge_font)
-    badge_w = badge_bbox[2] - badge_bbox[0] + 24
-    badge_h = badge_bbox[3] - badge_bbox[1] + 12
+    badge_w = badge_bbox[2] - badge_bbox[0] + 28
+    badge_h = badge_bbox[3] - badge_bbox[1] + 16
     draw.rounded_rectangle(
-        [(20, 20), (20 + badge_w, 20 + badge_h)],
+        [(24, 24), (24 + badge_w, 24 + badge_h)],
         radius=6,
         fill=F1_RED,
     )
-    draw.text((32, 22), badge_text, fill="white", font=badge_font)
+    draw.text(
+        (38, 27),
+        badge_text,
+        fill="white",
+        font=badge_font,
+    )
 
-    # Tagline — bottom area
-    tagline_font = _load_font("BebasNeue-Regular.ttf", 76)
+    # Tagline — centered at bottom
+    tagline_font = _load_font("BebasNeue-Regular.ttf", 80)
     tagline_upper = tagline.upper()
 
-    # Word-wrap to max 2 lines
-    wrapped = textwrap.fill(tagline_upper, width=18)
-    lines = wrapped.split("\n")[:2]
+    # Word-wrap to max 2 lines, ~16 chars wide
+    wrapped = textwrap.fill(tagline_upper, width=20)
+    lines = wrapped.split("\n")[:3]
 
-    # Draw with drop shadow
-    y_pos = IMAGE_SIZE[1] - 160
+    # Measure total text height
+    line_height = 85
+    total_text_height = len(lines) * line_height
+
+    # Position text so bottom of text block is 60px from bottom
+    y_start = IMAGE_SIZE[1] - 60 - total_text_height
+    x_pos = 50
+
     for line in lines:
         # Shadow
-        draw.text((42, y_pos + 2), line, fill=(0, 0, 0, 180), font=tagline_font)
+        draw.text((x_pos + 3, y_start + 3), line, fill=(0, 0, 0, 200), font=tagline_font)
         # Main text
-        draw.text((40, y_pos), line, fill="white", font=tagline_font)
-        y_pos += 80
+        draw.text((x_pos, y_start), line, fill="white", font=tagline_font)
+        y_start += line_height
 
-    # @boxboxnews watermark — bottom right
-    watermark_font = _load_font("Oswald-Bold.ttf", 22)
-    wm_text = "@boxboxnews"
+    # @boxbox_news watermark — bottom right
+    watermark_font = _load_font("Oswald-Bold.ttf", 20)
+    wm_text = "@boxbox_news"
     wm_bbox = draw.textbbox((0, 0), wm_text, font=watermark_font)
     wm_w = wm_bbox[2] - wm_bbox[0]
     draw.text(
-        (IMAGE_SIZE[0] - wm_w - 30, IMAGE_SIZE[1] - 40),
+        (IMAGE_SIZE[0] - wm_w - 30, IMAGE_SIZE[1] - 35),
         wm_text,
-        fill=(255, 255, 255, 160),
+        fill=(255, 255, 255, 140),
         font=watermark_font,
     )
 
