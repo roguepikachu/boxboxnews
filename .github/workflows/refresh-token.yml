@@ -1,0 +1,40 @@
+name: Refresh Instagram Token
+
+on:
+  schedule:
+    # Run every 50 days to refresh before 60-day expiry
+    - cron: '0 12 */50 * *'
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refresh long-lived token
+        env:
+          FB_APP_ID: ${{ secrets.FB_APP_ID }}
+          FB_APP_SECRET: ${{ secrets.FB_APP_SECRET }}
+          INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+        run: |
+          echo "Requesting token refresh..."
+          RESPONSE=$(curl -s -X GET \
+            "https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${FB_APP_ID}&client_secret=${FB_APP_SECRET}&fb_exchange_token=${INSTAGRAM_ACCESS_TOKEN}")
+
+          # Check for error
+          if echo "$RESPONSE" | grep -q '"error"'; then
+            echo "Token refresh failed:"
+            echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['error']['message'])"
+            echo ""
+            echo "You need to manually generate a new token via Graph API Explorer"
+            echo "and update the INSTAGRAM_ACCESS_TOKEN secret."
+            exit 1
+          fi
+
+          NEW_TOKEN=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+          EXPIRES=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('expires_in','unknown'))")
+          echo "Token refreshed successfully (expires in ${EXPIRES}s)"
+          echo ""
+          echo "⚠️  IMPORTANT: Update the INSTAGRAM_ACCESS_TOKEN repository secret with the new token."
+          echo "Go to: Settings > Secrets and variables > Actions > INSTAGRAM_ACCESS_TOKEN"
+          echo ""
+          echo "New token (first 30 chars): ${NEW_TOKEN:0:30}..."

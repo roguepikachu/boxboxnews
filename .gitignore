@@ -1,0 +1,11 @@
+output/
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+dist/
+build/
+data/ig_session.json
