@@ -118,3 +118,100 @@ def curate(candidates: list[dict], max_retries: int = 2) -> dict | None:
 
     logger.error("Failed to curate after %d attempts", max_retries + 1)
     return None
+
+
+VALIDATION_PROMPT = """You are a duplicate-detection judge for an F1 Instagram news page.
+
+Given a SELECTED story and a list of RECENTLY POSTED stories, determine whether the
+selected story covers the SAME underlying event as any recent post.
+
+Same event means: same incident, same transfer rumor, same regulation change, etc.
+Different angles or updates on the same event still count as duplicates.
+
+Return ONLY valid JSON:
+{
+    "is_duplicate": true/false,
+    "reason": "brief explanation"
+}"""
+
+
+def validate_not_duplicate(curated: dict, candidates: list[dict], max_attempts: int = 3) -> dict | None:
+    """Validate curated story is not a duplicate via a separate Gemini call.
+
+    If flagged as duplicate, removes that candidate and re-curates from the
+    remaining pool. Returns the final validated curated result, or None.
+    """
+    from src.dedup import _load_history
+
+    history = _load_history()
+    if not history["posts"]:
+        return curated
+
+    recent_posts = history["posts"][-10:]
+    recent_lines = []
+    for p in recent_posts:
+        recent_lines.append(
+            f"- {p.get('tagline', '')} | {p.get('title', '')} | keywords: {', '.join(p.get('keywords', []))}"
+        )
+    recent_block = "\n".join(recent_lines)
+
+    client = genai.Client(api_key=GEMINI_API_KEY)
+    remaining = list(candidates)
+
+    for attempt in range(max_attempts):
+        selected_desc = (
+            f"Tagline: {curated['tagline']}\n"
+            f"Source URL: {curated['selected_url']}\n"
+            f"Source: {curated['source']}"
+        )
+        user_prompt = (
+            f"SELECTED STORY:\n{selected_desc}\n\n"
+            f"RECENTLY POSTED:\n{recent_block}\n\n"
+            "Is the selected story a duplicate of any recent post?"
+        )
+
+        try:
+            response = client.models.generate_content(
+                model="gemini-flash-latest",
+                contents=[
+                    {"role": "user", "parts": [{"text": VALIDATION_PROMPT + "\n\n" + user_prompt}]},
+                ],
+            )
+            text = response.text.strip()
+            if text.startswith("```"):
+                text = text.split("\n", 1)[1]
+                if text.endswith("```"):
+                    text = text[:-3]
+                text = text.strip()
+
+            result = json.loads(text)
+
+            if not result.get("is_duplicate", False):
+                logger.info("Validation passed: not a duplicate")
+                return curated
+
+            logger.warning(
+                "Validation flagged duplicate (attempt %d/%d): %s",
+                attempt + 1, max_attempts, result.get("reason", ""),
+            )
+
+            # Remove the flagged candidate and re-curate
+            remaining = [c for c in remaining if c["url"] != curated["selected_url"]]
+            if not remaining:
+                logger.error("No candidates left after removing duplicates")
+                return None
+
+            curated = curate(remaining)
+            if not curated:
+                logger.error("Re-curation failed after removing duplicate")
+                return None
+
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.warning("Validation parse error: %s (attempt %d)", e, attempt + 1)
+            return curated  # On parse error, allow the story through
+        except Exception:
+            logger.exception("Validation API error (attempt %d)", attempt + 1)
+            return curated  # On API error, allow the story through
+
+    logger.error("Could not find non-duplicate story after %d attempts", max_attempts)
+    return None

@@ -2,7 +2,7 @@ name: Daily F1 Rumor Post
 
 on:
   schedule:
-    - cron: '0 9 * * *'
+    - cron: '0 9 */4 * *'
   workflow_dispatch:
 
 permissions:
