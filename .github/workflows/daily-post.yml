@@ -49,9 +49,9 @@ jobs:
         run: |
           git config user.name "boxboxnews-bot"
           git config user.email "bot@boxboxnews.com"
-          git pull --rebase origin main
           git add data/posted_history.json
           git diff --cached --quiet || git commit -m "chore: update post history [skip ci]"
+          git pull --rebase origin main
           git push
 
       - name: Upload debug artifacts
