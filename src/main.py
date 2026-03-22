@@ -2,7 +2,7 @@ import logging
 import sys
 
 from src.rss_scraper import scrape_rss
-from src.dedup import already_posted_today, filter_duplicates, record_post
+from src.dedup import filter_duplicates, record_post
 from src.rumor_curator import curate, validate_not_duplicate
 from src.image_generator import generate_image, create_gradient_fallback
 from src.reference_images import fetch_reference_images
@@ -18,11 +18,6 @@ logger = logging.getLogger(__name__)
 
 
 def run() -> None:
-    # 0. Check if already posted today
-    if already_posted_today():
-        logger.info("Already posted today. Skipping.")
-        sys.exit(0)
-
     # 1. Scrape RSS feeds
     try:
         candidates = scrape_rss()
