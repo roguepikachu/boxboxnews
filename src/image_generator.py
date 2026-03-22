@@ -45,7 +45,7 @@ def _generate_with_gemini(
     parts = []
 
     if reference_images:
-        parts.append(types.Part.from_text(
+        parts.append(types.Part.from_text(text=
             "Use the following reference photos to understand what the people, "
             "cars, and teams look like. Generate a NEW cinematic image (not a copy) "
             "inspired by these references that matches the prompt below. "
@@ -55,7 +55,7 @@ def _generate_with_gemini(
             parts.append(types.Part.from_bytes(data=ref, mime_type=_detect_mime(ref)))
             logger.info("Attached reference image %d (%d bytes)", i + 1, len(ref))
 
-    parts.append(types.Part.from_text(prompt))
+    parts.append(types.Part.from_text(text=prompt))
 
     response = client.models.generate_content(
         model=GEMINI_IMAGE_MODEL,
@@ -84,6 +84,9 @@ def _generate_with_imagen(client: genai.Client, prompt: str) -> bytes | None:
             aspect_ratio="1:1",
         ),
     )
+    if not response.generated_images:
+        logger.warning("Imagen returned no images (prompt may have been filtered)")
+        return None
     return response.generated_images[0].image.image_bytes
 
 

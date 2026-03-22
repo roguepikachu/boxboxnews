@@ -1,12 +1,15 @@
 import io
+import json
 import logging
 import os
 import random
 import textwrap
 
 from PIL import Image, ImageDraw, ImageFont
+from google import genai
+from google.genai import types
 
-from src.config import FONTS_DIR, OUTPUT_DIR, IMAGE_SIZE, F1_RED
+from src.config import FONTS_DIR, OUTPUT_DIR, IMAGE_SIZE, F1_RED, GEMINI_API_KEY, GEMINI_TEXT_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +22,91 @@ def _load_font(name: str, size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.load_default()
 
 
+def _ask_gemini_placement(image_bytes: bytes, tagline: str, text_w: int, text_h: int) -> dict | None:
+    """Ask Gemini to analyze the image and recommend text placement.
+
+    Returns {"x": int, "y": int, "alignment": "left"|"center"|"right"} or None.
+    """
+    try:
+        client = genai.Client(api_key=GEMINI_API_KEY)
+
+        # Detect mime
+        mime = "image/jpeg"
+        if image_bytes[:4] == b"\x89PNG":
+            mime = "image/png"
+        elif image_bytes[:4] == b"RIFF":
+            mime = "image/webp"
+
+        prompt = (
+            f"This is a {IMAGE_SIZE[0]}x{IMAGE_SIZE[1]} image for an F1 Instagram post. "
+            f"I need to place the tagline \"{tagline}\" on it.\n"
+            f"The text block is approximately {text_w}px wide and {text_h}px tall.\n"
+            f"The @boxbox_news watermark occupies the bottom-right corner "
+            f"(roughly x>830, y>1045).\n\n"
+            "Analyze the image and find the BEST position for the tagline where:\n"
+            "1. Text will be readable (place over darker, less busy areas)\n"
+            "2. Text does NOT cover the main subject (face, car, key action)\n"
+            "3. Text does NOT overlap the bottom-right watermark zone\n"
+            "4. Prefer areas with natural contrast (shadows, sky, dark backgrounds)\n\n"
+            f"The x,y coordinates are for the top-left corner of the text block. "
+            f"Valid ranges: x: 30-{IMAGE_SIZE[0] - text_w - 30}, "
+            f"y: 30-{IMAGE_SIZE[1] - text_h - 50}.\n\n"
+            "Return ONLY valid JSON:\n"
+            "{\"x\": <int>, \"y\": <int>, \"alignment\": \"left\" or \"center\" or \"right\", "
+            "\"reason\": \"brief explanation\"}"
+        )
+
+        response = client.models.generate_content(
+            model=GEMINI_TEXT_MODEL,
+            contents=[types.Content(parts=[
+                types.Part.from_bytes(data=image_bytes, mime_type=mime),
+                types.Part.from_text(text=prompt),
+            ], role="user")],
+        )
+
+        text = response.text.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1]
+            if text.endswith("```"):
+                text = text[:-3]
+            text = text.strip()
+
+        result = json.loads(text)
+        x = int(result["x"])
+        y = int(result["y"])
+        alignment = result.get("alignment", "left")
+        reason = result.get("reason", "")
+
+        # Clamp to valid bounds
+        x = max(30, min(x, IMAGE_SIZE[0] - text_w - 30))
+        y = max(30, min(y, IMAGE_SIZE[1] - text_h - 50))
+
+        logger.info("Gemini text placement: (%d, %d) align=%s — %s", x, y, alignment, reason)
+        return {"x": x, "y": y, "alignment": alignment}
+
+    except Exception:
+        logger.exception("Gemini text placement failed, using random fallback")
+        return None
+
+
+def _random_placement(text_w: int, text_h: int) -> dict:
+    """Fallback random placement avoiding the watermark zone."""
+    pad = 40
+    wm_zone_x = IMAGE_SIZE[0] - 250
+    wm_zone_y = IMAGE_SIZE[1] - 50
+
+    max_x = max(pad, IMAGE_SIZE[0] - text_w - pad)
+    max_y = max(pad, IMAGE_SIZE[1] - text_h - pad)
+    x = random.randint(pad, max_x)
+    y = random.randint(pad, max_y)
+
+    # Nudge if overlapping watermark
+    if y + text_h > wm_zone_y and x + text_w > wm_zone_x:
+        y = max(pad, wm_zone_y - text_h - pad)
+
+    return {"x": x, "y": y, "alignment": "left"}
+
+
 def composite(image_bytes: bytes, tagline: str) -> bytes:
     """Add text overlay to the generated image."""
     img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
@@ -27,22 +115,13 @@ def composite(image_bytes: bytes, tagline: str) -> bytes:
     overlay = Image.new("RGBA", IMAGE_SIZE, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
 
-    # Bottom gradient (bottom 40%)
-    gradient_start = int(IMAGE_SIZE[1] * 0.60)
-    for y in range(gradient_start, IMAGE_SIZE[1]):
-        progress = (y - gradient_start) / (IMAGE_SIZE[1] - gradient_start)
-        alpha = int(progress * 230)
-        draw.rectangle([(0, y), (IMAGE_SIZE[0], y + 1)], fill=(0, 0, 0, alpha))
-
-    # Tagline — random position, avoiding watermark zone
+    # Tagline setup
     tagline_font = _load_font("BebasNeue-Regular.ttf", 80)
     tagline_upper = tagline.upper()
 
-    # Word-wrap to max 3 lines
     wrapped = textwrap.fill(tagline_upper, width=20)
     lines = wrapped.split("\n")[:3]
 
-    # Measure text block dimensions
     line_height = 85
     total_text_height = len(lines) * line_height
     max_line_w = max(
@@ -50,28 +129,39 @@ def composite(image_bytes: bytes, tagline: str) -> bytes:
         for line in lines
     )
 
-    # Watermark exclusion zone (bottom-right corner)
-    wm_zone_x = IMAGE_SIZE[0] - 250  # watermark starts around here
-    wm_zone_y = IMAGE_SIZE[1] - 50   # watermark vertical area
+    # Ask Gemini where to place the text
+    placement = _ask_gemini_placement(image_bytes, tagline_upper, max_line_w, total_text_height)
+    if placement is None:
+        placement = _random_placement(max_line_w, total_text_height)
 
-    # Random position with padding, ensuring text stays in bounds
-    pad = 40
-    max_x = max(pad, IMAGE_SIZE[0] - max_line_w - pad)
-    max_y = max(pad, IMAGE_SIZE[1] - total_text_height - pad)
-    x_base = random.randint(pad, max_x)
-    y_start = random.randint(pad, max_y)
+    x_base = placement["x"]
+    y_start = placement["y"]
+    alignment = placement.get("alignment", "left")
 
-    # If tagline block overlaps watermark zone, nudge it up or left
-    tagline_bottom = y_start + total_text_height
-    if tagline_bottom > wm_zone_y and x_base + max_line_w > wm_zone_x:
-        # Try moving up first
-        y_start = max(pad, wm_zone_y - total_text_height - pad)
+    # Draw a subtle local gradient behind the text for readability
+    grad_pad = 20
+    grad_x1 = max(0, x_base - grad_pad)
+    grad_y1 = max(0, y_start - grad_pad)
+    grad_x2 = min(IMAGE_SIZE[0], x_base + max_line_w + grad_pad)
+    grad_y2 = min(IMAGE_SIZE[1], y_start + total_text_height + grad_pad)
+    for y in range(grad_y1, grad_y2):
+        # Fade in from edges, max alpha 140 at center
+        vert_progress = 1.0 - abs(y - (grad_y1 + grad_y2) / 2) / ((grad_y2 - grad_y1) / 2)
+        alpha = int(vert_progress * 140)
+        draw.rectangle([(grad_x1, y), (grad_x2, y + 1)], fill=(0, 0, 0, alpha))
 
+    # Render tagline lines
     for line in lines:
         line_bbox = draw.textbbox((0, 0), line, font=tagline_font)
         line_w = line_bbox[2] - line_bbox[0]
-        # Center each line relative to the block's x_base
-        x_pos = x_base + (max_line_w - line_w) // 2
+
+        if alignment == "center":
+            x_pos = x_base + (max_line_w - line_w) // 2
+        elif alignment == "right":
+            x_pos = x_base + max_line_w - line_w
+        else:
+            x_pos = x_base
+
         # Shadow
         draw.text((x_pos + 3, y_start + 3), line, fill=(0, 0, 0, 200), font=tagline_font)
         # Main text
