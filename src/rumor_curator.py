@@ -14,12 +14,22 @@ You will receive a pool of F1 news items from multiple sources (Reddit, PlanetF1
 RacingNews365, Autosport, Motorsport.com). Pick the ONE most scroll-stopping
 rumor that would make the best Instagram post.
 
+CRITICAL FRESHNESS RULE:
+- Only pick stories about NEW developments from THIS WEEK.
+- REJECT stories about transfers, moves, or deals that are already confirmed and
+  publicly known (e.g. if a driver has already joined a team, that is old news).
+- REJECT "reaction to" or "analysis of" old events unless there is a genuinely
+  new development (new quote, new conflict, new FIA ruling, etc.).
+- The story must contain something the average F1 fan would NOT already know.
+  Ask yourself: "Would an F1 fan say 'I already knew that'?" If yes, skip it.
+
 Selection criteria (ranked):
-1. Drama level — transfers, conflicts, surprise retirements, regulation drama
-2. Specificity — concrete claims beat vague speculation
-3. Source credibility — Autosport/Motorsport.com > PlanetF1 > Reddit
-4. Recency — prefer last 12 hours
-5. Visual potential — stories involving specific teams/cars generate better images
+1. Freshness — MUST be a genuinely new development, not a rehash of known facts
+2. Drama level — transfers, conflicts, surprise retirements, regulation drama
+3. Specificity — concrete claims beat vague speculation
+4. Source credibility — Autosport/Motorsport.com > PlanetF1 > Reddit
+5. Recency — prefer last 12 hours
+6. Visual potential — stories involving specific teams/cars generate better images
 
 Return ONLY valid JSON:
 {
@@ -74,13 +84,18 @@ def curate(candidates: list[dict], max_retries: int = 2) -> dict | None:
         logger.warning("No candidates to curate")
         return None
 
+    from datetime import date
     client = genai.Client(api_key=GEMINI_API_KEY)
     avoid_topics = _get_recent_topics()
+    today = date.today().isoformat()
     user_prompt = (
+        f"Today's date is {today}.\n\n"
         f"Here are {len(candidates)} F1 news candidates from today:\n\n"
         f"{_format_candidates(candidates)}\n\n"
         f"{avoid_topics}\n\n"
-        "Pick the ONE best rumor and return the JSON."
+        "Pick the ONE best rumor and return the JSON. "
+        "Remember: only pick something that is a GENUINELY NEW development this week, "
+        "not old news being rehashed."
     )
 
     for attempt in range(max_retries + 1):
