@@ -26,26 +26,34 @@ NO_TEXT_SUFFIX = (
 
 
 
-def _generate_with_references(
-    client: genai.Client, prompt: str, reference_images: list[bytes],
+def _detect_mime(data: bytes) -> str:
+    """Detect image MIME type from magic bytes."""
+    if data[:4] == b"\x89PNG":
+        return "image/png"
+    if data[:4] == b"RIFF":
+        return "image/webp"
+    return "image/jpeg"
+
+
+def _generate_with_gemini(
+    client: genai.Client, prompt: str, reference_images: list[bytes] | None = None,
 ) -> bytes | None:
-    """Generate an image using Gemini multimodal with reference images as context."""
+    """Generate an image using Gemini image model (Nano Banana Pro).
+
+    Works with or without reference images.
+    """
     parts = []
-    parts.append(types.Part.from_text(
-        "Use the following reference photos to understand what the people, "
-        "cars, and teams look like. Generate a NEW cinematic image (not a copy) "
-        "inspired by these references that matches the prompt below. "
-        "The output must be a single 1:1 square image."
-    ))
-    for i, ref in enumerate(reference_images):
-        # Detect MIME type from magic bytes
-        mime = "image/jpeg"
-        if ref[:4] == b"\x89PNG":
-            mime = "image/png"
-        elif ref[:4] == b"RIFF":
-            mime = "image/webp"
-        parts.append(types.Part.from_bytes(data=ref, mime_type=mime))
-        logger.info("Attached reference image %d (%d bytes)", i + 1, len(ref))
+
+    if reference_images:
+        parts.append(types.Part.from_text(
+            "Use the following reference photos to understand what the people, "
+            "cars, and teams look like. Generate a NEW cinematic image (not a copy) "
+            "inspired by these references that matches the prompt below. "
+            "The output must be a single 1:1 square image."
+        ))
+        for i, ref in enumerate(reference_images):
+            parts.append(types.Part.from_bytes(data=ref, mime_type=_detect_mime(ref)))
+            logger.info("Attached reference image %d (%d bytes)", i + 1, len(ref))
 
     parts.append(types.Part.from_text(prompt))
 
@@ -67,7 +75,7 @@ def _generate_with_references(
 
 
 def _generate_with_imagen(client: genai.Client, prompt: str) -> bytes | None:
-    """Generate an image using Imagen 4 (prompt-only, no references)."""
+    """Generate an image using Imagen 4 (prompt-only fallback)."""
     response = client.models.generate_images(
         model=IMAGEN_MODEL,
         prompt=prompt,
@@ -82,12 +90,13 @@ def _generate_with_imagen(client: genai.Client, prompt: str) -> bytes | None:
 def generate_image(
     image_prompt: str, reference_images: list[bytes] | None = None,
 ) -> bytes | None:
-    """Generate a 1:1 image. Uses reference images for context when available.
+    """Generate a 1:1 image using Nano Banana Pro (primary) with Imagen fallback.
 
     Strategy:
-    1. If reference images provided → Gemini multimodal generation (references + prompt)
-    2. Fallback → Imagen 4 with the original prompt
-    3. Last resort → Imagen 4 with a generic F1 prompt
+    1. Gemini image model with reference images (if available)
+    2. Gemini image model prompt-only (no references)
+    3. Imagen 4 with the original prompt
+    4. Imagen 4 with a generic F1 prompt
     """
     client = genai.Client(api_key=GEMINI_API_KEY)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -97,21 +106,25 @@ def generate_image(
     attempts: list[tuple[str, callable]] = []
     if reference_images:
         attempts.append((
-            "Gemini with references",
-            lambda: _generate_with_references(client, prompt_with_suffix, reference_images),
+            f"{GEMINI_IMAGE_MODEL} with references",
+            lambda: _generate_with_gemini(client, prompt_with_suffix, reference_images),
         ))
     attempts.append((
-        "Imagen 4",
+        f"{GEMINI_IMAGE_MODEL} prompt-only",
+        lambda: _generate_with_gemini(client, prompt_with_suffix),
+    ))
+    attempts.append((
+        f"{IMAGEN_MODEL}",
         lambda: _generate_with_imagen(client, prompt_with_suffix),
     ))
     attempts.append((
-        "Imagen 4 fallback",
+        f"{IMAGEN_MODEL} fallback",
         lambda: _generate_with_imagen(client, GENERIC_FALLBACK_PROMPT),
     ))
 
     for i, (label, gen_fn) in enumerate(attempts):
         try:
-            logger.info("Generating image via %s (attempt %d)...", label, i + 1)
+            logger.info("Generating image via %s (attempt %d/%d)...", label, i + 1, len(attempts))
             image_bytes = gen_fn()
             if image_bytes:
                 debug_path = os.path.join(OUTPUT_DIR, "generated_image.png")
@@ -120,7 +133,7 @@ def generate_image(
                 logger.info("Image generated via %s (%d bytes)", label, len(image_bytes))
                 return image_bytes
         except Exception:
-            logger.exception("Image generation failed via %s (attempt %d)", label, i + 1)
+            logger.exception("Image generation failed via %s (attempt %d/%d)", label, i + 1, len(attempts))
 
     logger.error("All image generation attempts failed")
     return None
