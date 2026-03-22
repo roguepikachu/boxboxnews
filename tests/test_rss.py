@@ -24,7 +24,7 @@ def test_parse_entry_date_none():
 
 def test_scrape_rss_filters_old_articles():
     now = datetime.now(timezone.utc)
-    old_time = (now - timedelta(hours=48)).timetuple()
+    old_time = (now - timedelta(hours=200)).timetuple()
     fresh_time = (now - timedelta(hours=6)).timetuple()
 
     old_entry = MagicMock()

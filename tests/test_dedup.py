@@ -203,22 +203,56 @@ def test_record_post_with_summary():
 
 
 def test_validate_not_duplicate_passes():
-    """When Gemini says not a duplicate, return curated unchanged."""
+    """When Gemini says fresh and not a duplicate, return curated unchanged."""
     from src.rumor_curator import validate_not_duplicate
 
     curated = {"tagline": "NEW STORY", "selected_url": "https://example.com/1", "source": "autosport"}
     candidates = [{"title": "New story", "summary": "", "url": "https://example.com/1", "source": "autosport", "score": 5}]
 
-    mock_response = MagicMock()
-    mock_response.text = '{"is_duplicate": false, "reason": "different topic"}'
+    fresh_response = MagicMock()
+    fresh_response.text = '{"is_fresh": true, "reason": "breaking news"}'
+    not_dup_response = MagicMock()
+    not_dup_response.text = '{"is_duplicate": false, "reason": "different topic"}'
 
     with patch("src.dedup.POSTED_HISTORY_PATH", "/dev/null"), \
          patch("src.dedup._load_history", return_value={"posts": [{"tagline": "OLD", "title": "Old story", "keywords": ["hamilton"], "date": "2026-01-01"}]}), \
          patch("src.rumor_curator.genai") as mock_genai:
-        mock_genai.Client.return_value.models.generate_content.return_value = mock_response
+        mock_genai.Client.return_value.models.generate_content.side_effect = [fresh_response, not_dup_response]
         result = validate_not_duplicate(curated, candidates)
 
     assert result == curated
+
+
+def test_validate_freshness_rejects_stale_and_recurates():
+    """When Gemini flags story as stale, should remove and re-curate."""
+    from src.rumor_curator import validate_not_duplicate
+
+    curated1 = {"tagline": "OLD NEWS", "selected_url": "https://example.com/1", "source": "autosport"}
+    curated2 = {"tagline": "FRESH STORY", "selected_url": "https://example.com/2", "source": "planetf1"}
+    candidates = [
+        {"title": "Old news", "summary": "", "url": "https://example.com/1", "source": "autosport", "score": 5},
+        {"title": "Fresh", "summary": "", "url": "https://example.com/2", "source": "planetf1", "score": 4},
+    ]
+
+    stale_response = MagicMock()
+    stale_response.text = '{"is_fresh": false, "reason": "already known transfer"}'
+    fresh_response = MagicMock()
+    fresh_response.text = '{"is_fresh": true, "reason": "new development"}'
+    not_dup_response = MagicMock()
+    not_dup_response.text = '{"is_duplicate": false, "reason": "new topic"}'
+
+    with patch("src.dedup._load_history", return_value={"posts": [{"tagline": "OLD", "title": "Old", "keywords": ["hamilton"], "date": "2026-01-01"}]}), \
+         patch("src.rumor_curator.genai") as mock_genai, \
+         patch("src.rumor_curator.curate", return_value=curated2) as mock_curate:
+        mock_client = mock_genai.Client.return_value
+        # Call 1: freshness check on curated1 → stale
+        # Call 2: freshness check on curated2 → fresh
+        # Call 3: duplicate check on curated2 → not duplicate
+        mock_client.models.generate_content.side_effect = [stale_response, fresh_response, not_dup_response]
+        result = validate_not_duplicate(curated1, candidates)
+
+    assert result == curated2
+    mock_curate.assert_called_once()
 
 
 def test_validate_not_duplicate_flags_and_recurates():
@@ -232,8 +266,12 @@ def test_validate_not_duplicate_flags_and_recurates():
         {"title": "Fresh", "summary": "", "url": "https://example.com/2", "source": "planetf1", "score": 4},
     ]
 
+    fresh_response = MagicMock()
+    fresh_response.text = '{"is_fresh": true, "reason": "new development"}'
     dup_response = MagicMock()
     dup_response.text = '{"is_duplicate": true, "reason": "same event"}'
+    fresh_response2 = MagicMock()
+    fresh_response2.text = '{"is_fresh": true, "reason": "new development"}'
     ok_response = MagicMock()
     ok_response.text = '{"is_duplicate": false, "reason": "new topic"}'
 
@@ -241,11 +279,14 @@ def test_validate_not_duplicate_flags_and_recurates():
          patch("src.rumor_curator.genai") as mock_genai, \
          patch("src.rumor_curator.curate", return_value=curated2) as mock_curate:
         mock_client = mock_genai.Client.return_value
-        mock_client.models.generate_content.side_effect = [dup_response, ok_response]
+        # Call 1: freshness on curated1 → fresh
+        # Call 2: duplicate on curated1 → duplicate
+        # Call 3: freshness on curated2 → fresh
+        # Call 4: duplicate on curated2 → not duplicate
+        mock_client.models.generate_content.side_effect = [fresh_response, dup_response, fresh_response2, ok_response]
         result = validate_not_duplicate(curated1, candidates)
 
     assert result == curated2
-    # curate should have been called with the remaining candidate (without the duplicate)
     mock_curate.assert_called_once()
     recurated_candidates = mock_curate.call_args[0][0]
     assert len(recurated_candidates) == 1

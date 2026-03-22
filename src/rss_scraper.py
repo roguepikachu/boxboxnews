@@ -18,7 +18,7 @@ def _parse_entry_date(entry) -> datetime | None:
     return None
 
 
-def scrape_rss(max_age_hours: int = 24) -> list[dict]:
+def scrape_rss(max_age_hours: int = 168) -> list[dict]:
     """Fetch recent F1 articles from RSS feeds."""
     cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
     candidates = []

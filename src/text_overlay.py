@@ -10,6 +10,7 @@ from google import genai
 from google.genai import types
 
 from src.config import FONTS_DIR, OUTPUT_DIR, IMAGE_SIZE, F1_RED, GEMINI_API_KEY, GEMINI_TEXT_MODEL
+from src.cost_tracker import tracker
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,7 @@ def _ask_gemini_placement(image_bytes: bytes, tagline: str, text_w: int, text_h:
                 types.Part.from_text(text=prompt),
             ], role="user")],
         )
+        tracker.record_generate_content(GEMINI_TEXT_MODEL, response)
 
         text = response.text.strip()
         if text.startswith("```"):

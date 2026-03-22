@@ -13,16 +13,8 @@ INSTAGRAM_ACCOUNT_ID = os.environ.get("INSTAGRAM_ACCOUNT_ID", "")
 # Cloudinary
 CLOUDINARY_URL = os.environ.get("CLOUDINARY_URL", "")
 
-# RSS Feeds
+# RSS Feeds — breaking F1 news sources, no general sports sites
 RSS_FEEDS = {
-    "planetf1": {
-        "url": "https://www.planetf1.com/news/feed/",
-        "name": "PlanetF1",
-    },
-    "racingnews365": {
-        "url": "https://racingnews365.com/feed/news.xml",
-        "name": "RacingNews365",
-    },
     "autosport": {
         "url": "https://www.autosport.com/rss/feed/f1",
         "name": "Autosport",
@@ -35,17 +27,25 @@ RSS_FEEDS = {
         "url": "https://www.the-race.com/feed/",
         "name": "The Race",
     },
+    "bbc_f1": {
+        "url": "https://feeds.bbci.co.uk/sport/formula1/rss.xml",
+        "name": "BBC F1",
+    },
+    "crash_f1": {
+        "url": "https://www.crash.net/rss/f1",
+        "name": "Crash.net F1",
+    },
+    "gpfans": {
+        "url": "https://www.gpfans.com/en/rss.xml",
+        "name": "GPFans",
+    },
+    "formula1_official": {
+        "url": "https://www.formula1.com/content/fom-website/en/latest/all.xml",
+        "name": "Formula1.com",
+    },
     "racefans": {
         "url": "https://www.racefans.net/feed/",
         "name": "RaceFans",
-    },
-    "gpblog": {
-        "url": "https://www.gpblog.com/en/rss/index.xml",
-        "name": "GPblog",
-    },
-    "formulanews": {
-        "url": "https://www.formula1.com/content/fom-website/en/latest/all.xml",
-        "name": "Formula1.com",
     },
 }
 

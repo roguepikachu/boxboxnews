@@ -5,6 +5,7 @@ from google import genai
 from google.genai import types
 
 from src.config import GEMINI_API_KEY, OUTPUT_DIR, GEMINI_IMAGE_MODEL, IMAGEN_MODEL
+from src.cost_tracker import tracker
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,7 @@ def _generate_with_gemini(
             response_modalities=["IMAGE", "TEXT"],
         ),
     )
+    tracker.record_generate_content(GEMINI_IMAGE_MODEL, response)
 
     # Extract the generated image from the response parts
     for part in response.candidates[0].content.parts:
@@ -87,6 +89,7 @@ def _generate_with_imagen(client: genai.Client, prompt: str) -> bytes | None:
     if not response.generated_images:
         logger.warning("Imagen returned no images (prompt may have been filtered)")
         return None
+    tracker.record_image_generation(IMAGEN_MODEL)
     return response.generated_images[0].image.image_bytes
 
 

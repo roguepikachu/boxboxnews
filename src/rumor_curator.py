@@ -4,6 +4,7 @@ import logging
 from google import genai
 
 from src.config import GEMINI_API_KEY, GEMINI_TEXT_MODEL
+from src.cost_tracker import tracker
 
 logger = logging.getLogger(__name__)
 
@@ -49,9 +50,13 @@ Return ONLY valid JSON:
 def _format_candidates(candidates: list[dict]) -> str:
     lines = []
     for i, c in enumerate(candidates, 1):
+        pub = ""
+        if c.get("timestamp"):
+            pub = f"   Published: {c['timestamp'].isoformat()}\n"
         lines.append(
             f"{i}. [{c['source'].upper()}] {c['title']}\n"
             f"   Summary: {c['summary'][:200]}\n"
+            f"{pub}"
             f"   URL: {c['url']}\n"
             f"   Score: {c['score']}"
         )
@@ -106,6 +111,7 @@ def curate(candidates: list[dict], max_retries: int = 2) -> dict | None:
                     {"role": "user", "parts": [{"text": SYSTEM_PROMPT + "\n\n" + user_prompt}]},
                 ],
             )
+            tracker.record_generate_content(GEMINI_TEXT_MODEL, response)
             text = response.text.strip()
             # Strip markdown code fences if present
             if text.startswith("```"):
@@ -135,6 +141,31 @@ def curate(candidates: list[dict], max_retries: int = 2) -> dict | None:
     return None
 
 
+FRESHNESS_PROMPT = """You are a strict freshness judge for an F1 Instagram news page.
+
+Your job is to determine whether a story is GENUINELY NEW or just a rehash of
+old/already-known information.
+
+A story is STALE if:
+- It reports a transfer, signing, or deal that was already publicly confirmed
+  weeks or months ago (e.g. "Driver X joins Team Y" when that happened last season)
+- It is a reaction/analysis/opinion piece about an event everyone already knows about
+- It reports on a driver already being at their current team as if it were news
+- The headline could have been written a month ago and still be accurate
+
+A story is FRESH if:
+- It reports something that happened in the last 48 hours
+- It contains a NEW quote, NEW development, NEW conflict, or NEW FIA decision
+- It is a breaking story or a genuinely new rumor not yet widely known
+- Even if it involves known people/teams, the specific event or claim is new
+
+Return ONLY valid JSON:
+{
+    "is_fresh": true/false,
+    "reason": "brief explanation of why this is fresh or stale"
+}"""
+
+
 VALIDATION_PROMPT = """You are a duplicate-detection judge for an F1 Instagram news page.
 
 Given a SELECTED story and a list of RECENTLY POSTED stories, determine whether the
@@ -150,30 +181,99 @@ Return ONLY valid JSON:
 }"""
 
 
-def validate_not_duplicate(curated: dict, candidates: list[dict], max_attempts: int = 3) -> dict | None:
-    """Validate curated story is not a duplicate via a separate Gemini call.
+def _check_freshness(client: genai.Client, curated: dict, today: str) -> bool:
+    """Ask Gemini whether the curated story is genuinely fresh. Returns True if fresh."""
+    selected_desc = (
+        f"Today's date: {today}\n"
+        f"Tagline: {curated['tagline']}\n"
+        f"Caption: {curated.get('caption', '')[:300]}\n"
+        f"Source: {curated['source']}\n"
+        f"URL: {curated['selected_url']}"
+    )
+    user_prompt = (
+        f"SELECTED STORY:\n{selected_desc}\n\n"
+        "Is this story genuinely fresh and newsworthy as of today's date, "
+        "or is it stale/old/already-known information?"
+    )
 
-    If flagged as duplicate, removes that candidate and re-curates from the
-    remaining pool. Returns the final validated curated result, or None.
+    try:
+        response = client.models.generate_content(
+            model=GEMINI_TEXT_MODEL,
+            contents=[
+                {"role": "user", "parts": [{"text": FRESHNESS_PROMPT + "\n\n" + user_prompt}]},
+            ],
+        )
+        tracker.record_generate_content(GEMINI_TEXT_MODEL, response)
+        text = response.text.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1]
+            if text.endswith("```"):
+                text = text[:-3]
+            text = text.strip()
+
+        result = json.loads(text)
+        is_fresh = result.get("is_fresh", True)
+        reason = result.get("reason", "")
+
+        if is_fresh:
+            logger.info("Freshness check passed: %s", reason)
+        else:
+            logger.warning("Freshness check FAILED: %s", reason)
+        return is_fresh
+
+    except Exception:
+        logger.exception("Freshness check error, allowing story through")
+        return True  # fail open
+
+
+def validate_not_duplicate(curated: dict, candidates: list[dict], max_attempts: int = 3) -> dict | None:
+    """Validate curated story is genuinely fresh and not a duplicate.
+
+    Runs two checks per attempt:
+    1. Freshness — is this actually new news, not a rehash of old facts?
+    2. Duplicate — does this overlap with recent posts?
+
+    If either check fails, removes that candidate and re-curates.
+    Returns the final validated curated result, or None.
     """
+    from datetime import date
     from src.dedup import _load_history
 
-    history = _load_history()
-    if not history["posts"]:
-        return curated
-
-    recent_posts = history["posts"][-10:]
-    recent_lines = []
-    for p in recent_posts:
-        recent_lines.append(
-            f"- {p.get('tagline', '')} | {p.get('title', '')} | keywords: {', '.join(p.get('keywords', []))}"
-        )
-    recent_block = "\n".join(recent_lines)
-
+    today = date.today().isoformat()
     client = genai.Client(api_key=GEMINI_API_KEY)
     remaining = list(candidates)
 
+    # Build recent posts context for duplicate check
+    history = _load_history()
+    recent_posts = history["posts"][-10:]
+    recent_block = ""
+    if recent_posts:
+        recent_lines = []
+        for p in recent_posts:
+            recent_lines.append(
+                f"- {p.get('tagline', '')} | {p.get('title', '')} | keywords: {', '.join(p.get('keywords', []))}"
+            )
+        recent_block = "\n".join(recent_lines)
+
     for attempt in range(max_attempts):
+        # --- Check 1: Freshness ---
+        if not _check_freshness(client, curated, today):
+            logger.warning("Story rejected as stale (attempt %d/%d)", attempt + 1, max_attempts)
+            remaining = [c for c in remaining if c["url"] != curated["selected_url"]]
+            if not remaining:
+                logger.error("No candidates left after freshness filtering")
+                return None
+            curated = curate(remaining)
+            if not curated:
+                logger.error("Re-curation failed after freshness rejection")
+                return None
+            continue
+
+        # --- Check 2: Duplicate (skip if no history) ---
+        if not recent_posts:
+            logger.info("No post history, skipping duplicate check")
+            return curated
+
         selected_desc = (
             f"Tagline: {curated['tagline']}\n"
             f"Source URL: {curated['selected_url']}\n"
@@ -192,6 +292,7 @@ def validate_not_duplicate(curated: dict, candidates: list[dict], max_attempts: 
                     {"role": "user", "parts": [{"text": VALIDATION_PROMPT + "\n\n" + user_prompt}]},
                 ],
             )
+            tracker.record_generate_content(GEMINI_TEXT_MODEL, response)
             text = response.text.strip()
             if text.startswith("```"):
                 text = text.split("\n", 1)[1]
@@ -202,15 +303,14 @@ def validate_not_duplicate(curated: dict, candidates: list[dict], max_attempts: 
             result = json.loads(text)
 
             if not result.get("is_duplicate", False):
-                logger.info("Validation passed: not a duplicate")
+                logger.info("Duplicate check passed: not a duplicate")
                 return curated
 
             logger.warning(
-                "Validation flagged duplicate (attempt %d/%d): %s",
+                "Duplicate check FAILED (attempt %d/%d): %s",
                 attempt + 1, max_attempts, result.get("reason", ""),
             )
 
-            # Remove the flagged candidate and re-curate
             remaining = [c for c in remaining if c["url"] != curated["selected_url"]]
             if not remaining:
                 logger.error("No candidates left after removing duplicates")
@@ -222,11 +322,11 @@ def validate_not_duplicate(curated: dict, candidates: list[dict], max_attempts: 
                 return None
 
         except (json.JSONDecodeError, KeyError) as e:
-            logger.warning("Validation parse error: %s (attempt %d)", e, attempt + 1)
-            return curated  # On parse error, allow the story through
+            logger.warning("Duplicate check parse error: %s (attempt %d)", e, attempt + 1)
+            return curated
         except Exception:
-            logger.exception("Validation API error (attempt %d)", attempt + 1)
-            return curated  # On API error, allow the story through
+            logger.exception("Duplicate check API error (attempt %d)", attempt + 1)
+            return curated
 
-    logger.error("Could not find non-duplicate story after %d attempts", max_attempts)
+    logger.error("Could not find fresh, non-duplicate story after %d attempts", max_attempts)
     return None

@@ -9,6 +9,7 @@ from google import genai
 from google.genai import types
 
 from src.config import GEMINI_API_KEY, GEMINI_TEXT_MODEL
+from src.cost_tracker import tracker
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +117,7 @@ def _pick_best_with_gemini(
             model=GEMINI_TEXT_MODEL,
             contents=[types.Content(parts=parts, role="user")],
         )
+        tracker.record_generate_content(GEMINI_TEXT_MODEL, response)
         text = response.text.strip()
         if text.startswith("```"):
             text = text.split("\n", 1)[1]

@@ -9,6 +9,7 @@ from src.reference_images import fetch_reference_images
 from src.text_overlay import composite
 from src.image_uploader import upload_image
 from src.instagram_poster import post_to_instagram
+from src.cost_tracker import tracker
 
 logging.basicConfig(
     level=logging.INFO,
@@ -89,6 +90,9 @@ def run() -> None:
         sys.exit(1)
 
     logger.info("Pipeline complete! Media ID: %s", media_id)
+
+    # Print cost summary
+    print("\n" + tracker.summary())
 
 
 if __name__ == "__main__":
