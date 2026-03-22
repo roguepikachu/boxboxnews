@@ -60,3 +60,8 @@ POSTED_HISTORY_PATH = os.path.join(DATA_DIR, "posted_history.json")
 # Image
 IMAGE_SIZE = (1080, 1080)
 F1_RED = "#E10600"
+
+# Models — override via GitHub repo variables or env vars
+GEMINI_TEXT_MODEL = os.environ.get("GEMINI_TEXT_MODEL", "gemini-2.5-flash")
+GEMINI_IMAGE_MODEL = os.environ.get("GEMINI_IMAGE_MODEL", "gemini-3-pro-image-generation")
+IMAGEN_MODEL = os.environ.get("IMAGEN_MODEL", "imagen-4.0-generate-001")

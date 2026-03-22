@@ -3,7 +3,7 @@ import logging
 
 from google import genai
 
-from src.config import GEMINI_API_KEY
+from src.config import GEMINI_API_KEY, GEMINI_TEXT_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +86,7 @@ def curate(candidates: list[dict], max_retries: int = 2) -> dict | None:
     for attempt in range(max_retries + 1):
         try:
             response = client.models.generate_content(
-                model="gemini-flash-latest",
+                model=GEMINI_TEXT_MODEL,
                 contents=[
                     {"role": "user", "parts": [{"text": SYSTEM_PROMPT + "\n\n" + user_prompt}]},
                 ],
@@ -172,7 +172,7 @@ def validate_not_duplicate(curated: dict, candidates: list[dict], max_attempts: 
 
         try:
             response = client.models.generate_content(
-                model="gemini-flash-latest",
+                model=GEMINI_TEXT_MODEL,
                 contents=[
                     {"role": "user", "parts": [{"text": VALIDATION_PROMPT + "\n\n" + user_prompt}]},
                 ],

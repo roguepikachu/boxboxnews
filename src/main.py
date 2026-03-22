@@ -5,6 +5,7 @@ from src.rss_scraper import scrape_rss
 from src.dedup import already_posted_today, filter_duplicates, record_post
 from src.rumor_curator import curate, validate_not_duplicate
 from src.image_generator import generate_image, create_gradient_fallback
+from src.reference_images import fetch_reference_images
 from src.text_overlay import composite
 from src.image_uploader import upload_image
 from src.instagram_poster import post_to_instagram
@@ -68,22 +69,25 @@ def run() -> None:
         summary=original_summary,
     )
 
-    # 6. Generate image
-    image_bytes = generate_image(curated["image_prompt"])
+    # 6. Fetch reference images from Google for relevant visuals
+    reference_images = fetch_reference_images(curated.get("entities", {}))
+
+    # 7. Generate image using references for context
+    image_bytes = generate_image(curated["image_prompt"], reference_images=reference_images)
     if image_bytes is None:
         logger.warning("Using gradient fallback for image")
         image_bytes = create_gradient_fallback()
 
-    # 7. Text overlay
+    # 8. Text overlay
     final_image = composite(image_bytes, curated["tagline"])
 
-    # 8. Upload to Cloudinary
+    # 9. Upload to Cloudinary
     image_url = upload_image(final_image)
     if not image_url:
         logger.error("Image upload failed. No post today.")
         sys.exit(1)
 
-    # 9. Post to Instagram
+    # 10. Post to Instagram
     media_id = post_to_instagram(image_url, curated["caption"])
     if not media_id:
         logger.error("Instagram posting failed.")

@@ -1,6 +1,7 @@
 import io
 import logging
 import os
+import random
 import textwrap
 
 from PIL import Image, ImageDraw, ImageFont
@@ -33,41 +34,44 @@ def composite(image_bytes: bytes, tagline: str) -> bytes:
         alpha = int(progress * 230)
         draw.rectangle([(0, y), (IMAGE_SIZE[0], y + 1)], fill=(0, 0, 0, alpha))
 
-    # "RUMOR" badge — top left
-    badge_font = _load_font("BebasNeue-Regular.ttf", 30)
-    badge_text = "RUMOR"
-    badge_bbox = draw.textbbox((0, 0), badge_text, font=badge_font)
-    badge_w = badge_bbox[2] - badge_bbox[0] + 28
-    badge_h = badge_bbox[3] - badge_bbox[1] + 16
-    draw.rounded_rectangle(
-        [(24, 24), (24 + badge_w, 24 + badge_h)],
-        radius=6,
-        fill=F1_RED,
-    )
-    draw.text(
-        (38, 27),
-        badge_text,
-        fill="white",
-        font=badge_font,
-    )
-
-    # Tagline — centered at bottom
+    # Tagline — random position, avoiding watermark zone
     tagline_font = _load_font("BebasNeue-Regular.ttf", 80)
     tagline_upper = tagline.upper()
 
-    # Word-wrap to max 2 lines, ~16 chars wide
+    # Word-wrap to max 3 lines
     wrapped = textwrap.fill(tagline_upper, width=20)
     lines = wrapped.split("\n")[:3]
 
-    # Measure total text height
+    # Measure text block dimensions
     line_height = 85
     total_text_height = len(lines) * line_height
+    max_line_w = max(
+        draw.textbbox((0, 0), line, font=tagline_font)[2] - draw.textbbox((0, 0), line, font=tagline_font)[0]
+        for line in lines
+    )
 
-    # Position text so bottom of text block is 60px from bottom
-    y_start = IMAGE_SIZE[1] - 60 - total_text_height
-    x_pos = 50
+    # Watermark exclusion zone (bottom-right corner)
+    wm_zone_x = IMAGE_SIZE[0] - 250  # watermark starts around here
+    wm_zone_y = IMAGE_SIZE[1] - 50   # watermark vertical area
+
+    # Random position with padding, ensuring text stays in bounds
+    pad = 40
+    max_x = max(pad, IMAGE_SIZE[0] - max_line_w - pad)
+    max_y = max(pad, IMAGE_SIZE[1] - total_text_height - pad)
+    x_base = random.randint(pad, max_x)
+    y_start = random.randint(pad, max_y)
+
+    # If tagline block overlaps watermark zone, nudge it up or left
+    tagline_bottom = y_start + total_text_height
+    if tagline_bottom > wm_zone_y and x_base + max_line_w > wm_zone_x:
+        # Try moving up first
+        y_start = max(pad, wm_zone_y - total_text_height - pad)
 
     for line in lines:
+        line_bbox = draw.textbbox((0, 0), line, font=tagline_font)
+        line_w = line_bbox[2] - line_bbox[0]
+        # Center each line relative to the block's x_base
+        x_pos = x_base + (max_line_w - line_w) // 2
         # Shadow
         draw.text((x_pos + 3, y_start + 3), line, fill=(0, 0, 0, 200), font=tagline_font)
         # Main text

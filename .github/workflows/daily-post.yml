@@ -40,6 +40,9 @@ jobs:
           INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
           INSTAGRAM_ACCOUNT_ID: ${{ secrets.INSTAGRAM_ACCOUNT_ID }}
           CLOUDINARY_URL: ${{ secrets.CLOUDINARY_URL }}
+          GEMINI_TEXT_MODEL: ${{ vars.GEMINI_TEXT_MODEL }}
+          GEMINI_IMAGE_MODEL: ${{ vars.GEMINI_IMAGE_MODEL }}
+          IMAGEN_MODEL: ${{ vars.IMAGEN_MODEL }}
         run: python -m src.main
 
       - name: Commit dedup history
