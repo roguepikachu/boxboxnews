@@ -8,7 +8,7 @@ from src.image_generator import generate_image, create_gradient_fallback
 from src.reference_images import fetch_reference_images
 from src.text_overlay import composite
 from src.image_uploader import upload_image
-from src.instagram_poster import post_to_instagram
+from src.instagram_poster import post_to_instagram, preflight_check
 from src.cost_tracker import tracker
 
 logging.basicConfig(
@@ -19,6 +19,11 @@ logger = logging.getLogger(__name__)
 
 
 def run() -> None:
+    # 0. Preflight: verify Instagram credentials before spending API credits
+    if not preflight_check():
+        logger.error("Instagram preflight failed. Fix credentials before running pipeline.")
+        sys.exit(1)
+
     # 1. Scrape RSS feeds
     try:
         candidates = scrape_rss()

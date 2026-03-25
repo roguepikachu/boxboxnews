@@ -10,6 +10,34 @@ logger = logging.getLogger(__name__)
 GRAPH_API_BASE = "https://graph.facebook.com/v21.0"
 
 
+def preflight_check() -> bool:
+    """Verify Instagram API credentials are valid before spending resources."""
+    if not INSTAGRAM_ACCESS_TOKEN or not INSTAGRAM_ACCOUNT_ID:
+        logger.error("Instagram credentials not configured.")
+        return False
+
+    try:
+        resp = requests.get(
+            f"{GRAPH_API_BASE}/{INSTAGRAM_ACCOUNT_ID}",
+            params={
+                "fields": "id,username",
+                "access_token": INSTAGRAM_ACCESS_TOKEN,
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        logger.info("Instagram preflight OK — account: %s", data.get("username", data.get("id")))
+        return True
+    except requests.exceptions.HTTPError as e:
+        body = e.response.text if e.response is not None else ""
+        logger.error("Instagram preflight FAILED: %s %s", e.response.status_code if e.response else 0, body)
+        return False
+    except Exception:
+        logger.exception("Instagram preflight FAILED")
+        return False
+
+
 def post_to_instagram(image_url: str, caption: str, max_retries: int = 3) -> str | None:
     """Post an image to Instagram via Graph API. Returns the media ID."""
     for attempt in range(max_retries):
