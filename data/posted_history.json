@@ -156,6 +156,20 @@
         "verstappen",
         "sauber"
       ]
+    },
+    {
+      "hash": "87316595a4cd155c6f8d1e1acf1b444c17171a88045485e958f0eeb354d70df6",
+      "url_hash": "92260ef0a752bd5d28386cd4ee638af131d808995cd30210d6a414d31a4e8680",
+      "tagline": "OCON DEMANDS ACTION AFTER DEATH THREATS",
+      "title": "Ocon wants \"big consequences\" for F1 \"keyboard warriors\" after death threats",
+      "summary": "Esteban Ocon has responded to death threats he received after a crash with Franco Colapinto in the Chinese Grand Prix",
+      "source": "crash_f1",
+      "date": "2026-03-29",
+      "url": "https://www.crash.net/f1/news/1091944/1/esteban-ocon-wants-big-consequences-f1-keyboard-warriors-after-death-threats",
+      "keywords": [
+        "colapinto",
+        "ocon"
+      ]
     }
   ]
 }
